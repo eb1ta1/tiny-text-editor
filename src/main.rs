@@ -1,26 +1,27 @@
-// use clap::{App, Arg};
-// use std::cmp::{max, min};
-// use st&d::ffi::OsStr;
+use clap::{App, Arg};
+use std::cmp::{max, min};
+use std::ffi::OsStr;
+use std::fmt::write;
 use std::fs;
-// use std::io::{self, stdin, stdout, Error, Write};
+use std::io::{self, stdin, stdout, Error, Write};
 use std::path;
 use structs::Character;
-// use termion::clear;
-// use termion::cursor;
-// use termion::event::{Event, Key};
-// use termion::input::TermRead;
-// use termion::raw::IntoRawMode;
-// use termion::screen::AlternateScreen;
+use termion::clear;
+use termion::cursor;
+use termion::event::{Event, Key};
+use termion::input::TermRead;
+use termion::raw::IntoRawMode;
+use termion::screen::AlternateScreen;
 use unicode_width::UnicodeWidthStr;
 
 pub mod structs;
 
 use structs::Cursor;
 
-#[allow(dead_code)]
 impl Default for Editor {
     fn default() -> Self {
         Self {
+            characters: vec![Vec::new()],
             cursor_position: Cursor { row: 0, column: 0 },
             row_offset: 0,
             path: None,
@@ -30,6 +31,7 @@ impl Default for Editor {
 }
 // エディタの内部状態
 struct Editor {
+    characters: Vec<Vec<Character>>,
     cursor_position: Cursor,
     path: Option<path::PathBuf>,
     // 画面の一番上のy座標
@@ -50,7 +52,6 @@ impl Editor {
             None => string = "".to_string(),
         };
         let separated_string: Vec<&str> = string.split("\n").collect();
-        let mut characters_vec = Vec::new();
         for string in separated_string {
             let mut line_vec = Vec::new();
             let mut start: usize = 0;
@@ -63,17 +64,48 @@ impl Editor {
                     length,
                 })
             }
-            characters_vec.push(line_vec)
+            self.characters.push(line_vec)
         }
         // println!("{:?}", characters_vec)
+        println!("open() is running");
     }
     fn terminal_size() -> (usize, usize) {
         let (cols, rows) = termion::terminal_size().unwrap();
         (rows as usize, cols as usize)
+    }
+    // 描画
+    fn draw<T: Write>(&self, out: &mut T) -> Result<(), io::Error> {
+        let (rows, cols) = Self::terminal_size();
+        write!(out, "{}", clear::All)?;
+        write!(out, "{}", cursor::Goto(1, 1))?;
+        for i in 0..self.characters.len() {
+            for character in &self.characters[i] {
+                write!(out, "{}", character.element)?;
+            }
+            if i > self.row_offset {
+                write!(out, "\r\n")?;
+            }
+        }
+        out.flush()?;
+        Ok(())
     }
 }
 fn main() {
     let mut state = Editor::default();
     let file_path = "assets/example.txt";
     state.open(path::Path::new(file_path));
+    let stdin = stdin();
+    let mut stdout = AlternateScreen::from(stdout().into_raw_mode().unwrap());
+    state.draw(&mut stdout).unwrap();
+    for evt in stdin.events() {
+        match evt.unwrap() {
+            Event::Key(Key::Ctrl('c')) => {
+                return;
+            }
+            _ => {
+                todo!()
+            }
+        }
+        state.draw(&mut stdout).unwrap();
+    }
 }
