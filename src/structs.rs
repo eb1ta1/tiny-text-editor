@@ -1,8 +1,8 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // カーソルの位置
 pub struct Cursor {
-    pub row: usize,
-    pub column: usize,
+    pub x: usize,
+    pub y: usize,
 }
 
 #[derive(Debug)]

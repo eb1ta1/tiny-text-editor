@@ -22,7 +22,7 @@ impl Default for Editor {
     fn default() -> Self {
         Self {
             characters: vec![Vec::new()],
-            cursor_position: Cursor { row: 0, column: 0 },
+            cursor: Cursor { x: 1, y: 1 },
             row_offset: 0,
             path: None,
             edited: false,
@@ -32,7 +32,7 @@ impl Default for Editor {
 // エディタの内部状態
 struct Editor {
     characters: Vec<Vec<Character>>,
-    cursor_position: Cursor,
+    cursor: Cursor,
     path: Option<path::PathBuf>,
     // 画面の一番上のy座標
     row_offset: usize,
@@ -67,27 +67,94 @@ impl Editor {
             self.characters.push(line_vec)
         }
         // println!("{:?}", characters_vec)
-        println!("open() is running");
+        // println!("open() is running");
     }
     fn terminal_size() -> (usize, usize) {
-        let (cols, rows) = termion::terminal_size().unwrap();
-        (rows as usize, cols as usize)
+        let (terminal_height, terminal_width) = termion::terminal_size().unwrap();
+        (terminal_height as usize, terminal_width as usize)
     }
-    // 描画
     fn draw<T: Write>(&self, out: &mut T) -> Result<(), io::Error> {
-        let (rows, cols) = Self::terminal_size();
+        let (terminal_height, terminal_width) = Self::terminal_size();
         write!(out, "{}", clear::All)?;
         write!(out, "{}", cursor::Goto(1, 1))?;
-        for i in 0..self.characters.len() {
-            for character in &self.characters[i] {
-                write!(out, "{}", character.element)?;
+
+        // 画面上の行、列
+        let mut x = 0;
+        let mut y = 0;
+
+        'outer: for i in self.row_offset..self.characters.len() {
+            for j in 0..self.characters[i].len() {
+                let c = &self.characters[i][j];
+                let width = c.length;
+                if y + width >= terminal_width {
+                    x += 1;
+                    y = 0;
+                    if x >= terminal_height {
+                        break 'outer;
+                    } else {
+                        write!(out, "\r\n")?;
+                    }
+                }
+                write!(out, "{}", c.element)?;
+                y += width;
             }
-            if i > self.row_offset {
+            x += 1;
+            y = 0;
+            if x < terminal_height && x > 1 {
                 write!(out, "\r\n")?;
             }
         }
+        write!(
+            out,
+            "{}",
+            cursor::Goto(self.cursor.x as u16, self.cursor.y as u16)
+        )?;
         out.flush()?;
         Ok(())
+    }
+
+    fn scroll(&mut self) {
+        let (rows, _) = Self::terminal_size();
+        self.row_offset = min(self.row_offset, self.cursor.x);
+        if self.cursor.x + 1 >= rows {
+            self.row_offset = max(self.row_offset, self.cursor.x + 1 - rows);
+        }
+    }
+    fn cursor_up(&mut self) {
+        if self.cursor.y > 1 {
+            self.cursor.y -= 1;
+            if !self.characters[self.cursor.y].is_empty() {
+                self.cursor.x = min(self.characters[self.cursor.y].len(), self.cursor.x);
+            } else {
+                self.cursor.x = 1;
+            }
+        } else {
+            self.cursor.x = 1;
+        }
+    }
+    fn cursor_down(&mut self) {
+        if self.cursor.y + 1 < self.characters.len() {
+            self.cursor.y += 1;
+            self.cursor.x = min(self.characters[self.cursor.y].len(), self.cursor.x);
+        } else {
+            self.cursor.x = 1;
+        }
+    }
+    fn cursor_left(&mut self) {
+        if self.cursor.x >= 1 {
+            self.cursor.x -= 1;
+        } else if self.cursor.y > 1 {
+            self.cursor.y -= 1;
+            self.cursor.x = self.characters[self.cursor.y].len();
+        }
+    }
+    fn cursor_right(&mut self) {
+        if self.cursor.x < self.characters[self.cursor.y].len() {
+            self.cursor.x += 1;
+        } else if self.cursor.y + 1 < self.characters.len() {
+            self.cursor.y += 1;
+            self.cursor.x = 1;
+        }
     }
 }
 fn main() {
@@ -102,9 +169,19 @@ fn main() {
             Event::Key(Key::Ctrl('c')) => {
                 return;
             }
-            _ => {
-                todo!()
+            Event::Key(Key::Up) => {
+                state.cursor_up();
             }
+            Event::Key(Key::Down) => {
+                state.cursor_down();
+            }
+            Event::Key(Key::Left) => {
+                state.cursor_left();
+            }
+            Event::Key(Key::Right) => {
+                state.cursor_right();
+            }
+            _ => {}
         }
         state.draw(&mut stdout).unwrap();
     }
