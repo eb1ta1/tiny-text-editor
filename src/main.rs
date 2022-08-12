@@ -1,36 +1,24 @@
+pub mod structs;
 use clap::{App, Arg};
 use std::cmp::{max, min};
 use std::ffi::OsStr;
-use std::fs;
 use std::io::{self, stdin, stdout, Write};
-use std::path;
+use std::{fs, vec};
+use std::{path, usize};
+use structs::{Cursor, Editor};
 use termion::clear;
 use termion::cursor;
 use termion::event::{Event, Key};
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
 use termion::screen::AlternateScreen;
-use unicode_width::UnicodeWidthChar;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// カーソルの位置　0-indexed
-struct Cursor {
-    x: usize,
-    y: usize,
-}
-
-// エディタの内部状態
-struct Editor {
-    buffer: Vec<Vec<char>>,
-    cursor: Cursor,
-    row_offset: usize,
-    path: Option<path::PathBuf>,
-}
+use unicode_width::UnicodeWidthStr;
 
 impl Default for Editor {
     fn default() -> Self {
         Self {
             buffer: vec![Vec::new()],
+            start_positions: vec![],
             cursor: Cursor { y: 0, x: 0 },
             row_offset: 0,
             path: None,
@@ -55,7 +43,17 @@ impl Editor {
                 }
             })
             .unwrap_or_else(|| vec![Vec::new()]);
+        for vec in self.buffer.clone() {
+            let mut start_position = Vec::new();
+            let mut cnt: usize = 0;
+            for character in vec {
+                let width: usize = character.to_string().width();
 
+                cnt += width;
+                start_position.push(cnt - width);
+            }
+            self.start_positions.push(start_position);
+        }
         self.path = Some(path.into());
         self.cursor = Cursor { y: 0, x: 0 };
         self.row_offset = 0;
@@ -66,13 +64,11 @@ impl Editor {
     }
     // 描画処理
     fn draw<T: Write>(&self, out: &mut T) -> Result<(), io::Error> {
-        // 画面サイズ(文字数)
         let (rows, cols) = Self::terminal_size();
 
         write!(out, "{}", clear::All)?;
         write!(out, "{}", cursor::Goto(1, 1))?;
 
-        // 画面上の行、列
         let mut row = 0;
         let mut col = 0;
 
@@ -80,23 +76,27 @@ impl Editor {
 
         'outer: for i in self.row_offset..self.buffer.len() {
             for j in 0..=self.buffer[i].len() {
+                // 正しい位置にカーソルが描画できるならOK
                 if self.cursor == (Cursor { y: i, x: j }) {
                     display_cursor = Some((row, col));
                 }
 
+                // if let Some(c) = self.buffer[i].get(j) {
+                //     let width = c.to_string().width();
+                //     if col + width >= cols {
+                //         row += 1;
+                //         col = 0;
+                //         if row >= rows {
+                //             break 'outer;
+                //         } else {
+                //             write!(out, "\r\n")?;
+                //         }
+                //     }
+                //     write!(out, "{}", c)?;
+                //     col += width;
+                // }
                 if let Some(c) = self.buffer[i].get(j) {
-                    let width = c.width().unwrap_or(0);
-                    if col + width >= cols {
-                        row += 1;
-                        col = 0;
-                        if row >= rows {
-                            break 'outer;
-                        } else {
-                            write!(out, "\r\n")?;
-                        }
-                    }
                     write!(out, "{}", c)?;
-                    col += width;
                 }
             }
             row += 1;
@@ -108,14 +108,21 @@ impl Editor {
             }
         }
 
-        if let Some((r, c)) = display_cursor {
-            write!(out, "{}", cursor::Goto(c as u16 + 1, r as u16 + 1))?;
+        if !(self.start_positions[self.cursor.y].is_empty()) {
+            if let Some((x, y)) = Some((
+                self.start_positions[self.cursor.y][self.cursor.x],
+                self.cursor.y,
+            )) {
+                write!(out, "{}", cursor::Goto(x as u16 + 1, y as u16 + 1))?;
+            }
+        } else if let Some((x, y)) = Some((0, self.cursor.y)) {
+            write!(out, "{}", cursor::Goto(x as u16 + 1, y as u16 + 1))?;
         }
 
         out.flush()?;
         Ok(())
     }
-    // カーソルが画面に映るようにする
+    fn _draw_status_bar(&mut self, _debug_mode: bool) {}
     fn scroll(&mut self) {
         let (rows, _) = Self::terminal_size();
         self.row_offset = min(self.row_offset, self.cursor.y);
@@ -144,10 +151,8 @@ impl Editor {
             } else {
                 self.cursor.x = min(self.cursor.x, self.buffer[self.cursor.y].len() - 1);
             }
-        } else if self.buffer[self.cursor.y].is_empty() {
-            self.cursor.x = 0
         } else {
-            self.cursor.x = self.buffer[self.cursor.y].len() - 1;
+            self.cursor.x = 0
         }
         self.scroll();
     }
@@ -186,12 +191,10 @@ impl Editor {
     }
     fn back_space(&mut self) {
         if self.cursor == (Cursor { y: 0, x: 0 }) {
-            // 一番始めの位置の場合何もしない
             return;
         }
 
         if self.cursor.x == 0 {
-            // 行の先頭
             let line = self.buffer.remove(self.cursor.y);
             self.cursor.y -= 1;
             self.cursor.x = self.buffer[self.cursor.y].len();
@@ -209,7 +212,6 @@ impl Editor {
         }
 
         if self.cursor.x == self.buffer[self.cursor.y].len() {
-            // 行末
             let line = self.buffer.remove(self.cursor.y + 1);
             self.buffer[self.cursor.y].extend(line.into_iter());
         } else {
@@ -240,7 +242,7 @@ fn main() {
 
     // let file_path: &OsStr = matches.value_of_os("file").unwrap();
 
-    let file_path = "src/main.rs";
+    let file_path = "assets/example.txt";
     let mut state = Editor::default();
 
     state.open(path::Path::new(file_path));

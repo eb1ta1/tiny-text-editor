@@ -1,6 +1,0 @@
-{
-  "[rust]": {
-    "diffEditor.codeLens": true
-  },
-  "editor.codeLens": true
-}
