@@ -1,7 +1,7 @@
 pub mod structs;
-use clap::{App, Arg};
+// use clap::{App, Arg};
+// use std::ffi::OsStr;
 use std::cmp::{max, min};
-use std::ffi::OsStr;
 use std::io::{self, stdin, stdout, Write};
 use std::{fs, vec};
 use std::{path, usize};
@@ -27,7 +27,6 @@ impl Default for Editor {
 }
 
 impl Editor {
-    // ファイルを読み込む
     fn open(&mut self, path: &path::Path) {
         self.buffer = fs::read_to_string(path)
             .ok()
@@ -66,8 +65,7 @@ impl Editor {
         }
         start_position
     }
-    // 描画処理
-    fn draw<T: Write>(&self, out: &mut T) -> Result<(), io::Error> {
+    fn draw<T: Write>(&mut self, out: &mut T) -> Result<(), io::Error> {
         let (rows, _cols) = Self::terminal_size();
 
         write!(out, "{}", clear::All)?;
@@ -93,11 +91,16 @@ impl Editor {
 
         if !(self.start_positions[self.cursor.y].is_empty()) {
             if self.cursor.x == self.start_positions[self.cursor.y].len() {
+                let last_char_width = self.buffer[self.cursor.y][self.cursor.x - 1]
+                    .to_string()
+                    .width();
                 write!(
                     out,
                     "{}",
                     cursor::Goto(
-                        self.start_positions[self.cursor.y][self.cursor.x - 1] as u16 + 2,
+                        (self.start_positions[self.cursor.y][self.cursor.x - 1] + last_char_width)
+                            as u16
+                            + 1,
                         self.cursor.y as u16 + 1
                     )
                 )?;
@@ -124,12 +127,39 @@ impl Editor {
     }
     fn cursor_up(&mut self) {
         if self.cursor.y > 0 {
-            self.cursor.y -= 1;
-            if self.buffer[self.cursor.y].is_empty() {
+            if self.buffer[self.cursor.y - 1].is_empty() || self.buffer[self.cursor.y].is_empty() {
                 self.cursor.x = 0;
             } else {
-                self.cursor.x = min(self.buffer[self.cursor.y].len(), self.cursor.x);
+                let prev_x_position: usize;
+                if self.start_positions[self.cursor.y].len() <= self.cursor.x {
+                    prev_x_position = self.start_positions[self.cursor.y][self.cursor.x - 1];
+                    let mut flag = false;
+                    for i in 0..self.start_positions[self.cursor.y - 1].len() - 1 {
+                        if prev_x_position <= self.start_positions[self.cursor.y - 1][i] {
+                            self.cursor.x = min(self.buffer[self.cursor.y - 1].len(), i);
+                            flag = true;
+                            break;
+                        }
+                    }
+                    if !flag {
+                        self.cursor.x = self.buffer[self.cursor.y - 1].len();
+                    }
+                } else {
+                    prev_x_position = self.start_positions[self.cursor.y][self.cursor.x];
+                    let mut flag = false;
+                    for i in 0..self.start_positions[self.cursor.y - 1].len() - 1 {
+                        if prev_x_position <= self.start_positions[self.cursor.y - 1][i] {
+                            self.cursor.x = min(self.buffer[self.cursor.y - 1].len(), i);
+                            flag = true;
+                            break;
+                        }
+                    }
+                    if !flag {
+                        self.cursor.x = self.buffer[self.cursor.y - 1].len();
+                    }
+                }
             }
+            self.cursor.y -= 1;
         } else {
             self.cursor.x = 0;
         }
@@ -137,14 +167,41 @@ impl Editor {
     }
     fn cursor_down(&mut self) {
         if self.cursor.y + 1 < self.buffer.len() {
-            self.cursor.y += 1;
-            if self.buffer[self.cursor.y].is_empty() {
-                self.cursor.x = 0
+            if self.buffer[self.cursor.y + 1].is_empty() || self.buffer[self.cursor.y].is_empty() {
+                self.cursor.x = 0;
             } else {
-                self.cursor.x = min(self.cursor.x, self.buffer[self.cursor.y].len());
+                let prev_x_position: usize;
+                if self.start_positions[self.cursor.y].len() <= self.cursor.x {
+                    prev_x_position = self.start_positions[self.cursor.y][self.cursor.x - 1];
+                    let mut flag = false;
+                    for i in 0..self.start_positions[self.cursor.y + 1].len() - 1 {
+                        if prev_x_position <= self.start_positions[self.cursor.y + 1][i] {
+                            self.cursor.x = min(self.buffer[self.cursor.y + 1].len(), i);
+                            flag = true;
+                            break;
+                        }
+                    }
+                    if !flag {
+                        self.cursor.x = self.buffer[self.cursor.y + 1].len();
+                    }
+                } else {
+                    prev_x_position = self.start_positions[self.cursor.y][self.cursor.x];
+                    let mut flag = false;
+                    for i in 0..self.start_positions[self.cursor.y + 1].len() - 1 {
+                        if prev_x_position <= self.start_positions[self.cursor.y + 1][i] {
+                            self.cursor.x = min(self.buffer[self.cursor.y + 1].len(), i);
+                            flag = true;
+                            break;
+                        }
+                    }
+                    if !flag {
+                        self.cursor.x = self.buffer[self.cursor.y + 1].len();
+                    }
+                }
             }
+            self.cursor.y += 1;
         } else {
-            self.cursor.x = self.buffer[self.cursor.y].len() - 1;
+            self.cursor.x = self.buffer[self.cursor.y].len();
         }
         self.scroll();
     }
@@ -154,7 +211,7 @@ impl Editor {
         } else if self.cursor.y > 0 {
             self.cursor.y -= 1;
             if !(self.buffer[self.cursor.y].is_empty()) {
-                self.cursor.x = self.buffer[self.cursor.y].len() - 1;
+                self.cursor.x = self.buffer[self.cursor.y].len();
             } else {
                 self.cursor.x = 0;
             }
@@ -174,10 +231,9 @@ impl Editor {
     }
     fn insert(&mut self, c: char) {
         if c == '\n' {
-            // 改行
             let rest: Vec<char> = self.buffer[self.cursor.y].drain(self.cursor.x..).collect();
             self.buffer.insert(self.cursor.y + 1, rest);
-            self.start_positions.insert(self.cursor.y + 1, vec![]);
+            self.start_positions.insert(self.cursor.y, vec![]);
             self.cursor.y += 1;
             self.cursor.x = 0;
             self.scroll();
@@ -239,7 +295,6 @@ impl Editor {
 }
 
 fn main() {
-    // // Clap
     // let matches = App::new("Editor")
     //     .about("A text editor")
     //     .bin_name("Editor")
