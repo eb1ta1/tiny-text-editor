@@ -126,37 +126,60 @@ impl Editor {
         }
     }
     fn cursor_up(&mut self) {
+        // if self.cursor.y > 0 {
+        //     if self.buffer[self.cursor.y - 1].is_empty() || self.buffer[self.cursor.y].is_empty() {
+        //         self.cursor.x = 0;
+        //     } else {
+        //         let mut prev_x_position_data = Vec::new();
+        //         if self.start_positions[self.cursor.y].len() <= self.cursor.x {
+        //             prev_x_position_data
+        //                 .push(self.start_positions[self.cursor.y][self.cursor.x - 1]);
+        //         } else {
+        //             prev_x_position_data.push(self.start_positions[self.cursor.y][self.cursor.x]);
+        //         }
+        //         let mut flag = false;
+        //         let prev_x_position: usize = prev_x_position_data[0];
+        //         for i in 0..self.start_positions[self.cursor.y - 1].len() - 1 {
+        //             if (prev_x_position <= self.start_positions[self.cursor.y - 1][i])
+        //                 && (prev_x_position < self.start_positions[self.cursor.y - 1][i + 1])
+        //             {
+        //                 self.cursor.x = min(self.buffer[self.cursor.y - 1].len(), i);
+        //                 flag = true;
+        //                 break;
+        //             }
+        //         }
+        //         if !flag {
+        //             self.cursor.x = self.buffer[self.cursor.y - 1].len();
+        //         }
+        //     }
+        //     self.cursor.y -= 1;
+        // } else {
+        //     self.cursor.x = 0;
+        // }
         if self.cursor.y > 0 {
             if self.buffer[self.cursor.y - 1].is_empty() || self.buffer[self.cursor.y].is_empty() {
                 self.cursor.x = 0;
             } else {
-                let prev_x_position: usize;
+                let mut prev_x_position_data = Vec::new();
                 if self.start_positions[self.cursor.y].len() <= self.cursor.x {
-                    prev_x_position = self.start_positions[self.cursor.y][self.cursor.x - 1];
-                    let mut flag = false;
-                    for i in 0..self.start_positions[self.cursor.y - 1].len() - 1 {
-                        if prev_x_position <= self.start_positions[self.cursor.y - 1][i] {
-                            self.cursor.x = min(self.buffer[self.cursor.y - 1].len(), i);
-                            flag = true;
-                            break;
-                        }
-                    }
-                    if !flag {
-                        self.cursor.x = self.buffer[self.cursor.y - 1].len();
-                    }
+                    prev_x_position_data
+                        .push(self.start_positions[self.cursor.y][self.cursor.x - 1]);
                 } else {
-                    prev_x_position = self.start_positions[self.cursor.y][self.cursor.x];
-                    let mut flag = false;
-                    for i in 0..self.start_positions[self.cursor.y - 1].len() - 1 {
-                        if prev_x_position <= self.start_positions[self.cursor.y - 1][i] {
-                            self.cursor.x = min(self.buffer[self.cursor.y - 1].len(), i);
-                            flag = true;
-                            break;
-                        }
+                    prev_x_position_data.push(self.start_positions[self.cursor.y][self.cursor.x]);
+                }
+                let prev_x_position = prev_x_position_data[0];
+                let mut flag = false;
+                for i in 0..self.start_positions[self.cursor.y - 1].len() - 1 {
+                    if (self.start_positions[self.cursor.y - 1][i] <= prev_x_position)
+                        && (prev_x_position < self.start_positions[self.cursor.y - 1][i + 1])
+                    {
+                        self.cursor.x = min(self.buffer[self.cursor.y - 1].len(), i);
+                        flag = true;
+                        break;
                     }
-                    if !flag {
-                        self.cursor.x = self.buffer[self.cursor.y - 1].len();
-                    }
+                }
+                if !flag {
+                    self.cursor.x = self.buffer[self.cursor.y - 1].len();
                 }
             }
             self.cursor.y -= 1;
@@ -170,33 +193,26 @@ impl Editor {
             if self.buffer[self.cursor.y + 1].is_empty() || self.buffer[self.cursor.y].is_empty() {
                 self.cursor.x = 0;
             } else {
-                let prev_x_position: usize;
+                let mut prev_x_position_data = Vec::new();
                 if self.start_positions[self.cursor.y].len() <= self.cursor.x {
-                    prev_x_position = self.start_positions[self.cursor.y][self.cursor.x - 1];
-                    let mut flag = false;
-                    for i in 0..self.start_positions[self.cursor.y + 1].len() - 1 {
-                        if prev_x_position <= self.start_positions[self.cursor.y + 1][i] {
-                            self.cursor.x = min(self.buffer[self.cursor.y + 1].len(), i);
-                            flag = true;
-                            break;
-                        }
-                    }
-                    if !flag {
-                        self.cursor.x = self.buffer[self.cursor.y + 1].len();
-                    }
+                    prev_x_position_data
+                        .push(self.start_positions[self.cursor.y][self.cursor.x - 1]);
                 } else {
-                    prev_x_position = self.start_positions[self.cursor.y][self.cursor.x];
-                    let mut flag = false;
-                    for i in 0..self.start_positions[self.cursor.y + 1].len() - 1 {
-                        if prev_x_position <= self.start_positions[self.cursor.y + 1][i] {
-                            self.cursor.x = min(self.buffer[self.cursor.y + 1].len(), i);
-                            flag = true;
-                            break;
-                        }
+                    prev_x_position_data.push(self.start_positions[self.cursor.y][self.cursor.x]);
+                }
+                let prev_x_position = prev_x_position_data[0];
+                let mut flag = false;
+                for i in 0..self.start_positions[self.cursor.y + 1].len() - 1 {
+                    if (self.start_positions[self.cursor.y + 1][i] <= prev_x_position)
+                        && (prev_x_position < self.start_positions[self.cursor.y + 1][i + 1])
+                    {
+                        self.cursor.x = min(self.buffer[self.cursor.y + 1].len(), i);
+                        flag = true;
+                        break;
                     }
-                    if !flag {
-                        self.cursor.x = self.buffer[self.cursor.y + 1].len();
-                    }
+                }
+                if !flag {
+                    self.cursor.x = self.buffer[self.cursor.y + 1].len();
                 }
             }
             self.cursor.y += 1;
