@@ -62,6 +62,17 @@ impl Editor {
         let (cols, rows) = termion::terminal_size().unwrap();
         (rows as usize, cols as usize)
     }
+    fn calc_start_positions(&mut self, vec: Vec<char>) -> Vec<usize> {
+        let mut start_position = Vec::new();
+        let mut cnt: usize = 0;
+        for character in &vec {
+            let width: usize = character.to_string().width();
+
+            cnt += width;
+            start_position.push(cnt - width);
+        }
+        start_position
+    }
     // 描画処理
     fn draw<T: Write>(&self, out: &mut T) -> Result<(), io::Error> {
         let (rows, cols) = Self::terminal_size();
@@ -80,21 +91,6 @@ impl Editor {
                 if self.cursor == (Cursor { y: i, x: j }) {
                     display_cursor = Some((row, col));
                 }
-
-                // if let Some(c) = self.buffer[i].get(j) {
-                //     let width = c.to_string().width();
-                //     if col + width >= cols {
-                //         row += 1;
-                //         col = 0;
-                //         if row >= rows {
-                //             break 'outer;
-                //         } else {
-                //             write!(out, "\r\n")?;
-                //         }
-                //     }
-                //     write!(out, "{}", c)?;
-                //     col += width;
-                // }
                 if let Some(c) = self.buffer[i].get(j) {
                     write!(out, "{}", c)?;
                 }
@@ -152,7 +148,7 @@ impl Editor {
                 self.cursor.x = min(self.cursor.x, self.buffer[self.cursor.y].len() - 1);
             }
         } else {
-            self.cursor.x = 0
+            self.cursor.x = self.buffer[self.cursor.y].len() - 1;
         }
         self.scroll();
     }
@@ -186,6 +182,8 @@ impl Editor {
             self.scroll();
         } else if !c.is_control() {
             self.buffer[self.cursor.y].insert(self.cursor.x, c);
+            self.start_positions[self.cursor.y] =
+                self.calc_start_positions(self.buffer[self.cursor.y].clone());
             self.cursor_right();
         }
     }
@@ -202,6 +200,9 @@ impl Editor {
         } else {
             self.cursor_left();
             self.buffer[self.cursor.y].remove(self.cursor.x);
+
+            self.start_positions[self.cursor.y] =
+                self.calc_start_positions(self.buffer[self.cursor.y].clone());
         }
     }
     fn delete(&mut self) {
@@ -216,6 +217,8 @@ impl Editor {
             self.buffer[self.cursor.y].extend(line.into_iter());
         } else {
             self.buffer[self.cursor.y].remove(self.cursor.x);
+            self.start_positions[self.cursor.y] =
+                self.calc_start_positions(self.buffer[self.cursor.y].clone());
         }
     }
     fn save(&self) {
