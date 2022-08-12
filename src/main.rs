@@ -44,14 +44,7 @@ impl Editor {
             })
             .unwrap_or_else(|| vec![Vec::new()]);
         for vec in self.buffer.clone() {
-            let mut start_position = Vec::new();
-            let mut cnt: usize = 0;
-            for character in vec {
-                let width: usize = character.to_string().width();
-
-                cnt += width;
-                start_position.push(cnt - width);
-            }
+            let start_position = self.calc_start_positions(vec);
             self.start_positions.push(start_position);
         }
         self.path = Some(path.into());
@@ -75,37 +68,40 @@ impl Editor {
     }
     // 描画処理
     fn draw<T: Write>(&self, out: &mut T) -> Result<(), io::Error> {
-        let (rows, cols) = Self::terminal_size();
+        let (rows, _cols) = Self::terminal_size();
 
         write!(out, "{}", clear::All)?;
         write!(out, "{}", cursor::Goto(1, 1))?;
 
         let mut row = 0;
-        let mut col = 0;
+        let mut _col = 0;
 
-        let mut display_cursor: Option<(usize, usize)> = None;
-
-        'outer: for i in self.row_offset..self.buffer.len() {
+        for i in self.row_offset..self.buffer.len() {
             for j in 0..=self.buffer[i].len() {
-                // 正しい位置にカーソルが描画できるならOK
-                if self.cursor == (Cursor { y: i, x: j }) {
-                    display_cursor = Some((row, col));
-                }
                 if let Some(c) = self.buffer[i].get(j) {
                     write!(out, "{}", c)?;
                 }
             }
             row += 1;
-            col = 0;
+            _col = 0;
             if row >= rows {
                 break;
             } else {
-                write!(out, "\n\r")?;
+                write!(out, "\r\n")?;
             }
         }
 
         if !(self.start_positions[self.cursor.y].is_empty()) {
-            if let Some((x, y)) = Some((
+            if self.cursor.x == self.start_positions[self.cursor.y].len() {
+                write!(
+                    out,
+                    "{}",
+                    cursor::Goto(
+                        self.start_positions[self.cursor.y][self.cursor.x - 1] as u16 + 2,
+                        self.cursor.y as u16 + 1
+                    )
+                )?;
+            } else if let Some((x, y)) = Some((
                 self.start_positions[self.cursor.y][self.cursor.x],
                 self.cursor.y,
             )) {
@@ -132,7 +128,7 @@ impl Editor {
             if self.buffer[self.cursor.y].is_empty() {
                 self.cursor.x = 0;
             } else {
-                self.cursor.x = min(self.buffer[self.cursor.y].len() - 1, self.cursor.x);
+                self.cursor.x = min(self.buffer[self.cursor.y].len(), self.cursor.x);
             }
         } else {
             self.cursor.x = 0;
@@ -145,7 +141,7 @@ impl Editor {
             if self.buffer[self.cursor.y].is_empty() {
                 self.cursor.x = 0
             } else {
-                self.cursor.x = min(self.cursor.x, self.buffer[self.cursor.y].len() - 1);
+                self.cursor.x = min(self.cursor.x, self.buffer[self.cursor.y].len());
             }
         } else {
             self.cursor.x = self.buffer[self.cursor.y].len() - 1;
@@ -157,18 +153,22 @@ impl Editor {
             self.cursor.x -= 1;
         } else if self.cursor.y > 0 {
             self.cursor.y -= 1;
-            self.cursor.x = self.buffer[self.cursor.y].len() - 1;
+            if !(self.buffer[self.cursor.y].is_empty()) {
+                self.cursor.x = self.buffer[self.cursor.y].len() - 1;
+            } else {
+                self.cursor.x = 0;
+            }
         }
         self.scroll();
     }
     fn cursor_right(&mut self) {
-        if self.cursor.x + 1 < self.buffer[self.cursor.y].len() {
+        if self.cursor.x < self.buffer[self.cursor.y].len() {
             self.cursor.x += 1;
         } else if self.cursor.y + 1 < self.buffer.len() {
             self.cursor.y += 1;
             self.cursor.x = 0;
         } else {
-            self.cursor.x = self.buffer[self.cursor.y].len() - 1;
+            self.cursor.x = self.buffer[self.cursor.y].len();
         }
         self.scroll();
     }
@@ -177,6 +177,7 @@ impl Editor {
             // 改行
             let rest: Vec<char> = self.buffer[self.cursor.y].drain(self.cursor.x..).collect();
             self.buffer.insert(self.cursor.y + 1, rest);
+            self.start_positions.insert(self.cursor.y + 1, vec![]);
             self.cursor.y += 1;
             self.cursor.x = 0;
             self.scroll();
@@ -197,6 +198,7 @@ impl Editor {
             self.cursor.y -= 1;
             self.cursor.x = self.buffer[self.cursor.y].len();
             self.buffer[self.cursor.y].extend(line.into_iter());
+            self.start_positions.remove(self.cursor.y);
         } else {
             self.cursor_left();
             self.buffer[self.cursor.y].remove(self.cursor.x);
@@ -215,6 +217,7 @@ impl Editor {
         if self.cursor.x == self.buffer[self.cursor.y].len() {
             let line = self.buffer.remove(self.cursor.y + 1);
             self.buffer[self.cursor.y].extend(line.into_iter());
+            self.start_positions.remove(self.cursor.y);
         } else {
             self.buffer[self.cursor.y].remove(self.cursor.x);
             self.start_positions[self.cursor.y] =
