@@ -13,4 +13,5 @@ pub struct Editor {
     pub cursor: Cursor,
     pub row_offset: usize,
     pub path: Option<path::PathBuf>,
+    pub widths: Vec<usize>,
 }

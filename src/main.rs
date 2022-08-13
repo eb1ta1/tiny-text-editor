@@ -22,6 +22,7 @@ impl Default for Editor {
             cursor: Cursor { y: 0, x: 0 },
             row_offset: 0,
             path: None,
+            widths: Vec::new(),
         }
     }
 }
@@ -43,8 +44,9 @@ impl Editor {
             })
             .unwrap_or_else(|| vec![Vec::new()]);
         for vec in self.buffer.clone() {
-            let start_position = self.calc_start_positions(vec);
+            let (start_position, width) = self.calc_start_positions(vec);
             self.start_positions.push(start_position);
+            self.widths.push(width);
         }
         self.path = Some(path.into());
         self.cursor = Cursor { y: 0, x: 0 };
@@ -54,16 +56,16 @@ impl Editor {
         let (cols, rows) = termion::terminal_size().unwrap();
         (rows as usize, cols as usize)
     }
-    fn calc_start_positions(&mut self, vec: Vec<char>) -> Vec<usize> {
-        let mut start_position = Vec::new();
+    fn calc_start_positions(&mut self, vec: Vec<char>) -> (Vec<usize>, usize) {
+        let mut start_position = vec![0];
         let mut cnt: usize = 0;
         for character in &vec {
             let width: usize = character.to_string().width();
 
             cnt += width;
-            start_position.push(cnt - width);
+            start_position.push(start_position.last().unwrap_or(&0) + width);
         }
-        start_position
+        (start_position, cnt)
     }
     fn draw<T: Write>(&mut self, out: &mut T) -> Result<(), io::Error> {
         let (rows, _cols) = Self::terminal_size();
@@ -126,52 +128,19 @@ impl Editor {
         }
     }
     fn cursor_up(&mut self) {
-        // if self.cursor.y > 0 {
-        //     if self.buffer[self.cursor.y - 1].is_empty() || self.buffer[self.cursor.y].is_empty() {
-        //         self.cursor.x = 0;
-        //     } else {
-        //         let mut prev_x_position_data = Vec::new();
-        //         if self.start_positions[self.cursor.y].len() <= self.cursor.x {
-        //             prev_x_position_data
-        //                 .push(self.start_positions[self.cursor.y][self.cursor.x - 1]);
-        //         } else {
-        //             prev_x_position_data.push(self.start_positions[self.cursor.y][self.cursor.x]);
-        //         }
-        //         let mut flag = false;
-        //         let prev_x_position: usize = prev_x_position_data[0];
-        //         for i in 0..self.start_positions[self.cursor.y - 1].len() - 1 {
-        //             if (prev_x_position <= self.start_positions[self.cursor.y - 1][i])
-        //                 && (prev_x_position < self.start_positions[self.cursor.y - 1][i + 1])
-        //             {
-        //                 self.cursor.x = min(self.buffer[self.cursor.y - 1].len(), i);
-        //                 flag = true;
-        //                 break;
-        //             }
-        //         }
-        //         if !flag {
-        //             self.cursor.x = self.buffer[self.cursor.y - 1].len();
-        //         }
-        //     }
-        //     self.cursor.y -= 1;
-        // } else {
-        //     self.cursor.x = 0;
-        // }
+        // 上に行く余地があることを担保
         if self.cursor.y > 0 {
+            // 移動先の行の長さがゼロ、または移動元の行の長さがゼロの場合
             if self.buffer[self.cursor.y - 1].is_empty() || self.buffer[self.cursor.y].is_empty() {
                 self.cursor.x = 0;
             } else {
-                let mut prev_x_position_data = Vec::new();
-                if self.start_positions[self.cursor.y].len() <= self.cursor.x {
-                    prev_x_position_data
-                        .push(self.start_positions[self.cursor.y][self.cursor.x - 1]);
-                } else {
-                    prev_x_position_data.push(self.start_positions[self.cursor.y][self.cursor.x]);
-                }
-                let prev_x_position = prev_x_position_data[0];
+                // 現在のx座標を取得
+                let current_x_position = self.start_positions[self.cursor.y][self.cursor.x];
                 let mut flag = false;
+                // 移動先の行のstart_positionsの中からもっとも近いものを選択
                 for i in 0..self.start_positions[self.cursor.y - 1].len() - 1 {
-                    if (self.start_positions[self.cursor.y - 1][i] <= prev_x_position)
-                        && (prev_x_position < self.start_positions[self.cursor.y - 1][i + 1])
+                    if (self.start_positions[self.cursor.y - 1][i] <= current_x_position)
+                        && (current_x_position < self.start_positions[self.cursor.y - 1][i + 1])
                     {
                         self.cursor.x = min(self.buffer[self.cursor.y - 1].len(), i);
                         flag = true;
@@ -189,22 +158,19 @@ impl Editor {
         self.scroll();
     }
     fn cursor_down(&mut self) {
+        // 下に行く余地があることを担保
         if self.cursor.y + 1 < self.buffer.len() {
+            // 移動先の行の長さがゼロ、または移動元の行の長さがゼロの場合
             if self.buffer[self.cursor.y + 1].is_empty() || self.buffer[self.cursor.y].is_empty() {
                 self.cursor.x = 0;
             } else {
-                let mut prev_x_position_data = Vec::new();
-                if self.start_positions[self.cursor.y].len() <= self.cursor.x {
-                    prev_x_position_data
-                        .push(self.start_positions[self.cursor.y][self.cursor.x - 1]);
-                } else {
-                    prev_x_position_data.push(self.start_positions[self.cursor.y][self.cursor.x]);
-                }
-                let prev_x_position = prev_x_position_data[0];
+                // 現在のx座標を取得
+                let current_x_position = self.start_positions[self.cursor.y][self.cursor.x];
                 let mut flag = false;
+                // 移動先の行のstart_positionsの中からもっとも近いものを選択
                 for i in 0..self.start_positions[self.cursor.y + 1].len() - 1 {
-                    if (self.start_positions[self.cursor.y + 1][i] <= prev_x_position)
-                        && (prev_x_position < self.start_positions[self.cursor.y + 1][i + 1])
+                    if (self.start_positions[self.cursor.y + 1][i] <= current_x_position)
+                        && (current_x_position < self.start_positions[self.cursor.y + 1][i + 1])
                     {
                         self.cursor.x = min(self.buffer[self.cursor.y + 1].len(), i);
                         flag = true;
@@ -217,7 +183,7 @@ impl Editor {
             }
             self.cursor.y += 1;
         } else {
-            self.cursor.x = self.buffer[self.cursor.y].len();
+            self.cursor.x = 0;
         }
         self.scroll();
     }
@@ -255,8 +221,10 @@ impl Editor {
             self.scroll();
         } else if !c.is_control() {
             self.buffer[self.cursor.y].insert(self.cursor.x, c);
-            self.start_positions[self.cursor.y] =
-                self.calc_start_positions(self.buffer[self.cursor.y].clone());
+            (
+                self.start_positions[self.cursor.y],
+                self.widths[self.cursor.y],
+            ) = self.calc_start_positions(self.buffer[self.cursor.y].clone());
             self.cursor_right();
         }
     }
@@ -274,9 +242,10 @@ impl Editor {
         } else {
             self.cursor_left();
             self.buffer[self.cursor.y].remove(self.cursor.x);
-
-            self.start_positions[self.cursor.y] =
-                self.calc_start_positions(self.buffer[self.cursor.y].clone());
+            (
+                self.start_positions[self.cursor.y],
+                self.widths[self.cursor.y],
+            ) = self.calc_start_positions(self.buffer[self.cursor.y].clone());
         }
     }
     fn delete(&mut self) {
@@ -292,8 +261,10 @@ impl Editor {
             self.start_positions.remove(self.cursor.y);
         } else {
             self.buffer[self.cursor.y].remove(self.cursor.x);
-            self.start_positions[self.cursor.y] =
-                self.calc_start_positions(self.buffer[self.cursor.y].clone());
+            (
+                self.start_positions[self.cursor.y],
+                self.widths[self.cursor.y],
+            ) = self.calc_start_positions(self.buffer[self.cursor.y].clone());
         }
     }
     fn save(&self) {
