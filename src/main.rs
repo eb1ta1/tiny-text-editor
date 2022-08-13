@@ -1,7 +1,7 @@
 pub mod structs;
-// use clap::{App, Arg};
-// use std::ffi::OsStr;
+use clap::{App, Arg};
 use std::cmp::{max, min};
+use std::ffi::OsStr;
 use std::io::{self, stdin, stdout, Write};
 use std::{fs, vec};
 use std::{path, usize};
@@ -183,7 +183,7 @@ impl Editor {
             }
             self.cursor.y += 1;
         } else {
-            self.cursor.x = 0;
+            self.cursor.x = self.buffer[self.cursor.y].len();
         }
         self.scroll();
     }
@@ -214,8 +214,14 @@ impl Editor {
     fn insert(&mut self, c: char) {
         if c == '\n' {
             let rest: Vec<char> = self.buffer[self.cursor.y].drain(self.cursor.x..).collect();
+            // 行を分割
             self.buffer.insert(self.cursor.y + 1, rest);
-            self.start_positions.insert(self.cursor.y, vec![]);
+            self.widths.insert(self.cursor.y + 1, 0);
+            self.start_positions.insert(self.cursor.y + 1, vec![]);
+            for i in [self.cursor.y, self.cursor.y + 1] {
+                (self.start_positions[i], self.widths[i]) =
+                    self.calc_start_positions(self.buffer[i].clone());
+            }
             self.cursor.y += 1;
             self.cursor.x = 0;
             self.scroll();
@@ -233,12 +239,35 @@ impl Editor {
             return;
         }
 
-        if self.cursor.x == 0 {
-            let line = self.buffer.remove(self.cursor.y);
+        if self.widths[self.cursor.y] == 0 {
             self.cursor.y -= 1;
-            self.cursor.x = self.buffer[self.cursor.y].len();
-            self.buffer[self.cursor.y].extend(line.into_iter());
+            self.cursor.x = self.widths[self.cursor.y];
+            self.buffer.remove(self.cursor.y + 1);
+            self.widths.remove(self.cursor.y + 1);
+            self.start_positions.remove(self.cursor.y + 1);
+            // self.cursor.x = self.buffer[self.cursor.y].len();
+            // self.buffer[self.cursor.y].extend(line.into_iter());
+            // self.start_positions.remove(self.cursor.y - 1);
+            // self.widths.remove(self.cursor.y - 1);
+        } else if self.cursor.x == 0 {
+            let next_row_length = self.buffer[self.cursor.y - 1].len();
+            // 移動元の行のbuffer
+            let prev = self.buffer[self.cursor.y].clone();
+            // 移動先の行のbufferに連結
+            self.buffer[self.cursor.y - 1].extend(prev.iter());
+
+            (
+                self.start_positions[self.cursor.y - 1],
+                self.widths[self.cursor.y - 1],
+            ) = self.calc_start_positions(self.buffer[self.cursor.y - 1].clone());
+
+            // 移動元の行の情報を削除
+            self.buffer.remove(self.cursor.y);
+            self.widths.remove(self.cursor.y);
             self.start_positions.remove(self.cursor.y);
+
+            self.cursor.y -= 1;
+            self.cursor.x = next_row_length;
         } else {
             self.cursor_left();
             self.buffer[self.cursor.y].remove(self.cursor.x);
@@ -249,16 +278,36 @@ impl Editor {
         }
     }
     fn delete(&mut self) {
-        if self.cursor.y == self.buffer.len() - 1
-            && self.cursor.x == self.buffer[self.cursor.y].len()
-        {
-            return;
-        }
+        //     if self.cursor.y == self.buffer.len() - 1
+        //         && self.cursor.x == self.buffer[self.cursor.y].len()
+        //     {
+        //         return;
+        //     }
 
-        if self.cursor.x == self.buffer[self.cursor.y].len() {
-            let line = self.buffer.remove(self.cursor.y + 1);
-            self.buffer[self.cursor.y].extend(line.into_iter());
+        if self.widths[self.cursor.y] == 0 {
+            self.cursor.x = 0;
+            self.buffer.remove(self.cursor.y);
+            self.widths.remove(self.cursor.y);
             self.start_positions.remove(self.cursor.y);
+        } else if self.cursor.x == self.buffer[self.cursor.y].len() {
+            let next_row_length = self.buffer[self.cursor.y + 1].len();
+            // 移動元の行のbuffer
+            let prev = self.buffer[self.cursor.y].clone();
+            // 移動先の行のbufferに連結
+            self.buffer[self.cursor.y + 1].extend(prev.iter());
+
+            (
+                self.start_positions[self.cursor.y + 1],
+                self.widths[self.cursor.y + 1],
+            ) = self.calc_start_positions(self.buffer[self.cursor.y + 1].clone());
+
+            // 移動元の行の情報を削除
+            self.buffer.remove(self.cursor.y);
+            self.widths.remove(self.cursor.y);
+            self.start_positions.remove(self.cursor.y);
+
+            self.cursor.y += 1;
+            self.cursor.x = next_row_length;
         } else {
             self.buffer[self.cursor.y].remove(self.cursor.x);
             (
@@ -282,15 +331,13 @@ impl Editor {
 }
 
 fn main() {
-    // let matches = App::new("Editor")
-    //     .about("A text editor")
-    //     .bin_name("Editor")
-    //     .arg(Arg::with_name("file").required(true))
-    //     .get_matches();
+    let matches = App::new("Editor")
+        .about("A text editor")
+        .bin_name("Editor")
+        .arg(Arg::with_name("file").required(true))
+        .get_matches();
 
-    // let file_path: &OsStr = matches.value_of_os("file").unwrap();
-
-    let file_path = "assets/example.txt";
+    let file_path: &OsStr = matches.value_of_os("file").unwrap();
     let mut state = Editor::default();
 
     state.open(path::Path::new(file_path));
